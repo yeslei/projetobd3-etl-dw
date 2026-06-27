@@ -1,0 +1,30 @@
+services:
+  postgres-dw:
+    image: postgres:16-alpine
+    container_name: postgres_dw_container
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: senha_segura_123
+      POSTGRES_DB: dw_academico
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_dw_data:/var/lib/postgresql/data
+
+  jupyter-etl:
+    image: jupyter/scipy-notebook:python-3.11
+    container_name: jupyter_etl_container
+    ports:
+      - "8888:8888"
+    volumes:
+      - .:/home/jovyan/work  # Mapeia a pasta atual para dentro do Jupyter
+    environment:
+      JUPYTER_ENABLE_LAB: "yes"
+    depends_on:
+      - postgres-dw
+    # Instala o driver do Postgres toda vez que o container subir
+    command: >
+      bash -c "pip install psycopg2-binary sqlalchemy && start-notebook.sh --NotebookApp.token=''"
+
+volumes:
+  postgres_dw_data:
