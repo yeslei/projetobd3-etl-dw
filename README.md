@@ -1,224 +1,231 @@
-# Projeto BD3 - ETL com Dataset Olist
+# Projeto BD3 - ETL e Modelagem de Data Warehouse (Dataset Olist)
 
-Este projeto tem como objetivo desenvolver a primeira etapa de um fluxo de Engenharia de Dados usando os arquivos CSV da pasta `dataset`. Nesta fase, o foco e apenas o processo de ETL: extrair os dados brutos, tratar problemas de qualidade, padronizar campos, criar atributos derivados e gerar arquivos tratados para uso futuro.
-
-> Observacao: a modelagem em tabelas fato e dimensoes ainda nao sera implementada nesta etapa. Ela fica como uma proxima fase do projeto.
+Este projeto tem como objetivo desenvolver um fluxo completo de Engenharia de Dados e Business Intelligence usando os ficheiros públicos da operação de e-commerce da Olist. O pipeline cobre desde o processo de ETL (Extração, Transformação e Carga) dos dados brutos até à modelagem e alimentação de um Data Warehouse (DW) alojado em PostgreSQL.
 
 ## Tema do Projeto
 
-O dataset utilizado representa uma operacao de e-commerce, baseada no conjunto publico da Olist. Ele contem informacoes sobre clientes, pedidos, itens vendidos, produtos, vendedores, pagamentos, avaliacoes e geolocalizacao.
+O dataset utilizado representa uma operação real de e-commerce e contém informações sobre clientes, pedidos, artigos vendidos, produtos, vendedores, pagamentos, avaliações e geolocalização. 
 
-A proposta e simular uma rotina real de preparacao de dados para apoiar analises gerenciais, como desempenho de vendas, prazos de entrega, avaliacao de clientes, categorias mais vendidas e comportamento regional dos pedidos.
+A proposta é simular uma rotina corporativa de engenharia de analytics: preparar os dados brutos, garantir a qualidade da informação e modelar um ambiente analítico robusto (Constellation Schema) capaz de responder a perguntas estratégicas de negócio sobre vendas, logística e satisfação, de forma ágil e precisa.
 
-## Objetivo Geral
+---
 
-Construir um notebook Jupyter com um processo ETL completo para transformar os CSVs brutos da pasta `dataset` em dados tratados, consistentes e prontos para etapas posteriores de analise, Data Mart ou dashboards.
+## 1. Processo de ETL (Tratamento e Limpeza)
 
-## Objetivos Especificos
+O notebook principal de extração e tratamento encontra-se em `notebooks/etl_olist.ipynb`. Ele lê os ficheiros brutos da pasta `dataset/` e aplica as seguintes regras de qualidade:
 
-- Ler todos os arquivos CSV brutos do dataset.
-- Verificar estrutura, volume, tipos de dados e valores ausentes.
-- Padronizar textos, datas, UFs, CEPs e nomes de colunas.
-- Remover duplicidades.
-- Tratar valores ausentes conforme o significado de cada tabela.
-- Corrigir inconsistencias basicas em valores numericos, datas e campos categoricos.
-- Criar atributos derivados uteis para analise.
-- Integrar as principais tabelas em um CSV tratado de pedidos com itens.
-- Gerar arquivos tratados na pasta `output`.
-- Documentar o fluxo para facilitar reproducao e apresentacao.
+### Regras de Tratamento Aplicadas
+- **Padronização de textos:** Remoção de espaços no início e no fim, conversão para letras minúsculas, normalização de acentos e padronização das UFs (Estados) em maiúsculas.
+- **CEPs (Códigos Postais):** Os valores são convertidos para texto e preenchidos com zeros à esquerda até 5 caracteres.
+- **Datas:** Conversão rigorosa para `datetime`. Datas inválidas são transformadas em valores nulos.
+- **Valores Ausentes:** Categorias ausentes recebem `sem_categoria`. Comentários ausentes recebem texto vazio. Medidas físicas numéricas recebem a mediana.
+- **Duplicados:** Os registos duplicados são removidos de todas as tabelas. Para geolocalização, os registos são agregados por prefixo de CEP.
+- **Inconsistências:** Valores financeiros ou físicos negativos (`price`, `freight_value`) são convertidos para zero ou nulos.
 
-## Dataset
+### Granularidade e Atributos Derivados
+Para suportar o Data Warehouse, **não realizamos agregações** nas tabelas de pagamentos e avaliações no ETL, mantendo a granularidade original do evento. Foram criados atributos analíticos como:
+- Agrupamentos temporais (`ano_pedido`, `mes_pedido`, `trimestre_pedido`, `dia_semana_pedido`)
+- Métricas logísticas (`dias_entrega`, `dias_estimados_entrega`, `atraso_dias`, `entregue_no_prazo`)
+- Métricas físicas (`product_volume_cm3`)
 
-Os arquivos esperados ficam na pasta `dataset`:
+Os ficheiros tratados são exportados para a pasta `output/` prontos para a carga no DW.
 
-- `olist_customers_dataset.csv`: dados dos clientes.
-- `olist_geolocation_dataset.csv`: latitude, longitude, cidade e UF por prefixo de CEP.
-- `olist_orders_dataset.csv`: pedidos e datas do ciclo de entrega.
-- `olist_order_items_dataset.csv`: itens de cada pedido, produto, vendedor, preco e frete.
-- `olist_order_payments_dataset.csv`: pagamentos dos pedidos.
-- `olist_order_reviews_dataset.csv`: avaliacoes dos clientes.
-- `olist_products_dataset.csv`: produtos, categorias e medidas fisicas.
-- `olist_sellers_dataset.csv`: vendedores.
-- `product_category_name_translation.csv`: traducao das categorias de produto.
+---
 
-## Estrutura do Projeto
+## 2. Modelagem do Data Warehouse (Constellation Schema)
+
+Para evitar problemas de cardinalidade e garantir elevada performance, o DW foi modelado num Esquema de Constelação, isolando as métricas em Tabelas Fato distintas que partilham Dimensões Conformadas.
+
+### Diagrama Entidade-Relacionamento (ERD)
+
+```mermaid
+erDiagram
+    %% ================= DIMENSÕES =================
+    
+    dim_tempo {
+        int sk_tempo PK "Formato AAAAMMDD"
+        date data_completa UK
+        int ano
+        int mes
+        int trimestre
+        varchar dia_semana
+    }
+    
+    dim_cliente {
+        int sk_cliente PK "SERIAL"
+        varchar bk_customer_unique_id UK "Business Key"
+        varchar customer_zip_code_prefix
+        varchar customer_city
+        varchar customer_state
+    }
+    
+    dim_produto {
+        int sk_produto PK "SERIAL"
+        varchar bk_product_id UK "Business Key"
+        varchar product_category_name
+        varchar product_category_name_english
+        numeric product_weight_g
+        numeric product_volume_cm3
+    }
+    
+    dim_vendedor {
+        int sk_vendedor PK "SERIAL"
+        varchar bk_seller_id UK "Business Key"
+        varchar seller_city
+        varchar seller_state
+    }
+    
+    dim_forma_pagamento {
+        int sk_forma_pagamento PK "SERIAL"
+        varchar payment_type
+    }
+
+    %% ================= FATOS =================
+
+    fato_vendas {
+        int sk_vendas PK "SERIAL"
+        int fk_tempo FK
+        int fk_cliente FK
+        int fk_produto FK
+        int fk_vendedor FK
+        varchar dd_order_id "Dimensão Degenerada"
+        int dd_order_item_id "Dimensão Degenerada"
+        numeric preco_item
+        numeric valor_frete
+        numeric valor_total_item
+    }
+
+    fato_pagamentos {
+        int sk_pagamentos PK "SERIAL"
+        int fk_tempo FK
+        int fk_cliente FK
+        int fk_forma_pagamento FK
+        varchar dd_order_id "Dimensão Degenerada"
+        int dd_payment_sequential "Dimensão Degenerada"
+        numeric valor_pagamento
+        int parcelas_pagamento
+    }
+
+    fato_logistica {
+        int sk_logistica PK "SERIAL"
+        int fk_tempo_compra FK
+        int fk_tempo_aprovacao FK
+        int fk_tempo_postagem FK
+        int fk_tempo_entrega_real FK
+        int fk_tempo_entrega_estimada FK
+        int fk_cliente FK
+        int fk_vendedor_principal FK
+        varchar dd_order_id "Dimensão Degenerada"
+        int dias_para_aprovacao
+        int dias_para_postagem
+        int dias_em_transito
+        int dias_totais_entrega
+        int dias_atraso
+        int flag_atrasado
+    }
+
+    fato_satisfacao {
+        int sk_satisfacao PK "SERIAL"
+        int fk_tempo_review FK
+        int fk_cliente FK
+        int fk_produto FK
+        int fk_vendedor FK
+        varchar dd_review_id "Dimensão Degenerada"
+        varchar dd_order_id "Dimensão Degenerada"
+        int review_score
+        int flag_tem_comentario
+        int tempo_resposta_horas
+    }
+
+    %% ================= RELACIONAMENTOS =================
+
+    dim_tempo ||--o{ fato_vendas : "ocorre_em"
+    dim_cliente ||--o{ fato_vendas : "realiza"
+    dim_produto ||--o{ fato_vendas : "contém"
+    dim_vendedor ||--o{ fato_vendas : "fornece"
+
+    dim_tempo ||--o{ fato_pagamentos : "ocorre_em"
+    dim_cliente ||--o{ fato_pagamentos : "paga"
+    dim_forma_pagamento ||--o{ fato_pagamentos : "utiliza"
+
+    dim_tempo ||--o{ fato_logistica : "marcos_temporais (Role-Playing)"
+    dim_cliente ||--o{ fato_logistica : "destino_entrega"
+    dim_vendedor ||--o{ fato_logistica : "origem_postagem"
+
+    dim_tempo ||--o{ fato_satisfacao : "avaliado_em"
+    dim_cliente ||--o{ fato_satisfacao : "escreve"
+    dim_produto ||--o{ fato_satisfacao : "avalia"
+    dim_vendedor ||--o{ fato_satisfacao : "julga"
+```
+
+### Dicionário de Restrições e Arquitetura
+- **Surrogate Keys (SK):** Geradas sequencialmente no banco de dados (`SERIAL`), isolando o DW das chaves do sistema transacional.
+- **Business Keys (BK):** As chaves originais receberam restrição `UNIQUE` para garantir a integridade dos processos de UPSERT.
+- **Matriz de Barramento (Bus Matrix):** Capacidade de cruzar relatórios (*Drill-Across*) através das Dimensões Comuns (ex: Produto, Tempo, Cliente).
+
+---
+
+## 3. Perguntas de Negócio Suportadas (Escopo Prático)
+
+As questões analíticas abaixo foram selecionadas para garantir um elevado impacto estratégico ao mesmo tempo que viabilizam o desenvolvimento ágil das queries SQL através de agregações e rankings.
+
+### Inteligência de Clientes (Customer Success & Growth)
+* **Comportamento de Recompra:** Qual é a percentagem de clientes que realizaram mais do que uma compra na plataforma, e como o ticket médio desse grupo se compara aos clientes de compra única?
+* **Top Clientes (Curva ABC Básica):** Quem são os 100 clientes que geraram o maior volume de receita histórica para a plataforma, e de que estados compram predominantemente?
+* **Impacto da Satisfação no Ticket:** Existe uma variação significativa no ticket médio (valor gasto) entre clientes que avaliam a compra com notas elevadas (4 e 5) versus notas baixas (1 e 2)?
+
+### Logística, Desempenho e SLA
+* **Mapa de Atrasos:** Quais são os 5 estados com a maior média de dias de atraso na entrega, e como esse atraso impacta diretamente a nota média de avaliação nessas regiões?
+* **Eficiência Temporal:** Qual é a proporção de pedidos entregues no prazo versus pedidos atrasados, analisada trimestre a trimestre ao longo dos anos operacionais?
+* **Barreira Logística (Frete):** Qual é a representatividade média do valor do frete em relação ao valor total pago pelo artigo, e em que categorias de produtos o frete pesa mais?
+
+### Saúde Financeira e Meios de Pagamento
+* **Alavancagem de Ticket por Parcelamento:** De que forma o método de pagamento principal e o número de parcelas escolhidas impactam o ticket médio das vendas?
+* **Sazonalidade de Faturação:** Qual é a evolução da faturação bruta mensal da plataforma, e qual o mês/ano que registou o pico histórico de vendas?
+* **Aderência de Crédito:** Quais são as 10 categorias de produtos que mais dependem de financiamento longo (vendas com mais de 6 parcelas) para escoarem o stock?
+
+### Catálogo de Produtos e Mercado
+* **Qualidade do Catálogo:** Os produtos que possuem descrições mais longas ou um número maior de fotografias recebem, em média, notas de avaliação mais elevadas dos consumidores?
+* **Concentração de Receita (Vendedores):** Quais são os top 10 vendedores que mais faturam na plataforma, e qual é a percentagem de atraso nas entregas que saem desses vendedores?
+* **Tração de Mercado:** Quais são as 5 categorias de produtos mais vendidas em volume (quantidade de artigos) e quais as 5 que mais geram receita financeira bruta?
+
+---
+
+## 4. Estrutura do Repositório
 
 ```text
 projetobd3-etl-dw/
-├── dataset/
-│   ├── olist_customers_dataset.csv
-│   ├── olist_geolocation_dataset.csv
-│   ├── olist_orders_dataset.csv
-│   ├── olist_order_items_dataset.csv
-│   ├── olist_order_payments_dataset.csv
-│   ├── olist_order_reviews_dataset.csv
-│   ├── olist_products_dataset.csv
-│   ├── olist_sellers_dataset.csv
-│   └── product_category_name_translation.csv
+├── dataset/                    # Ficheiros CSV originais da Olist (Brutos)
 ├── notebooks/
-│   └── etl_olist.ipynb
-├── output/
-│   └── arquivos gerados pelo notebook
-└── README.md
+│   ├── etl_olist.ipynb         # Extrator, padronizador e transformador
+│   └── load_dw.ipynb           # Script de carga (UPSERTs e DDL do PostgreSQL)
+├── output/                     # CSVs tratados gerados pelo ETL para a staging
+├── docker-compose.yml          # Aprovisionamento da infraestrutura (Postgres)
+└── README.md                   # Documentação do projeto
 ```
 
-## Notebook Principal
+## 5. Como Executar o Projeto
 
-O notebook principal esta em:
+1. **Suba a infraestrutura do Banco de Dados:**
+   No diretório raiz do projeto, execute o Docker Compose para instanciar o PostgreSQL localmente no porto `5433`:
+   ```bash
+   docker compose up -d
+   ```
+2. **Instale as dependências:**
+   Crie um ambiente virtual ou use o Poetry para instalar as bibliotecas necessárias:
+   ```bash
+   pip install pandas numpy sqlalchemy psycopg2-binary jupyter
+   ```
+3. **Execute o pipeline de Transformação (ETL):**
+   Abra e corra todas as células do notebook `notebooks/etl_olist.ipynb` para tratar os dados brutos e gerar os CSVs na pasta `output/`.
+4. **Alimente o Data Warehouse:**
+   Abra e corra o notebook `notebooks/load_dw.ipynb`. Ele executará a criação automática do Schema e realizará o UPSERT dos dados tratados, garantindo a integridade referencial.
 
-```text
-notebooks/etl_olist.ipynb
-```
+---
 
-Ele esta dividido nas seguintes etapas:
+## 6. Divisão Sugerida para a Equipa
 
-1. Configuracao do ambiente e importacao de bibliotecas.
-2. Definicao dos caminhos de entrada e saida.
-3. Leitura dos CSVs brutos.
-4. Perfilamento inicial dos dados.
-5. Padronizacao de textos, UFs e CEPs.
-6. Conversao de datas e campos numericos.
-7. Tratamento de nulos e duplicados.
-8. Criacao de atributos derivados.
-9. Agregacao de pagamentos, avaliacoes e geolocalizacao.
-10. Integracao das tabelas em uma base tratada de pedidos com itens.
-11. Validacoes finais de qualidade.
-12. Gravacao dos CSVs tratados na pasta `output`.
-
-## Regras de Tratamento Aplicadas
-
-### Padronizacao de textos
-
-- Remocao de espacos no inicio e no fim.
-- Conversao para letras minusculas em cidades e categorias.
-- Normalizacao de acentos para facilitar comparacoes.
-- Padronizacao das UFs em letras maiusculas.
-
-### CEPs
-
-- Prefixos de CEP sao convertidos para texto.
-- Valores sao preenchidos com zeros a esquerda ate 5 caracteres.
-
-### Datas
-
-- Campos de data sao convertidos para `datetime`.
-- Datas invalidas sao transformadas em valores nulos.
-- Sao criados atributos como ano, mes, trimestre, dia da semana e dias ate entrega.
-
-### Valores ausentes
-
-- Categorias de produto ausentes recebem `sem_categoria`.
-- Comentarios de avaliacoes ausentes recebem texto vazio.
-- Medidas numericas de produtos ausentes sao preenchidas com mediana.
-- Campos agregados inexistentes apos joins recebem valores padrao.
-
-### Duplicidades
-
-- Registros duplicados sao removidos em todas as tabelas.
-- Para geolocalizacao, os registros sao agregados por prefixo de CEP para evitar multiplas coordenadas para o mesmo prefixo.
-
-### Inconsistencias
-
-- UFs fora da lista oficial brasileira sao marcadas como ausentes.
-- Precos, fretes, pagamentos e medidas fisicas negativos sao tratados como nulos ou zero conforme o contexto.
-- O atraso de entrega e calculado comparando entrega real com data estimada.
-
-## Atributos Derivados
-
-O ETL cria campos novos para facilitar analises:
-
-- `ano_pedido`
-- `mes_pedido`
-- `trimestre_pedido`
-- `dia_semana_pedido`
-- `dias_entrega`
-- `dias_estimados_entrega`
-- `atraso_dias`
-- `entregue_no_prazo`
-- `valor_total_item`
-- `valor_total_pagamento`
-- `quantidade_formas_pagamento`
-- `review_score_medio`
-- `tem_comentario`
-
-## Saidas Geradas
-
-Ao executar o notebook, a pasta `output` sera criada automaticamente com arquivos como:
-
-- `customers_tratado.csv`
-- `orders_tratado.csv`
-- `order_items_tratado.csv`
-- `products_tratado.csv`
-- `sellers_tratado.csv`
-- `payments_agregado.csv`
-- `reviews_agregado.csv`
-- `geolocation_agregado.csv`
-- `pedidos_itens_tratado.csv`
-- `relatorio_qualidade_etl.csv`
-
-O arquivo mais importante desta etapa e:
-
-```text
-output/pedidos_itens_tratado.csv
-```
-
-Ele concentra pedidos, clientes, itens, produtos, vendedores, pagamentos, avaliacoes e informacoes geograficas em uma unica base tratada.
-
-## Como Executar
-
-1. Abra o projeto no VS Code, Jupyter Notebook, JupyterLab ou Anaconda.
-2. Instale as dependencias necessarias, se ainda nao existirem:
-
-```bash
-pip install pandas numpy
-```
-
-3. Abra o notebook:
-
-```text
-notebooks/etl_olist.ipynb
-```
-
-4. Execute as celulas em ordem.
-5. Verifique os arquivos gerados na pasta `output`.
-
-## Consultas Analiticas Possiveis Depois do ETL
-
-Mesmo sem criar fatos e dimensoes nesta etapa, os dados tratados ja permitem algumas analises:
-
-- Faturamento por mes.
-- Volume de pedidos por estado e cidade.
-- Categorias de produtos mais vendidas.
-- Ticket medio por pedido.
-- Vendedores com maior volume de vendas.
-- Prazo medio de entrega.
-- Pedidos entregues com atraso.
-- Media de avaliacao por categoria.
-- Relacao entre atraso de entrega e nota da avaliacao.
-- Formas de pagamento mais utilizadas.
-
-## Proximas Etapas do Projeto
-
-As proximas fases podem incluir:
-
-- Modelagem de Data Mart.
-- Criacao de tabela fato de vendas ou pedidos.
-- Criacao de dimensoes como cliente, produto, vendedor, tempo e localidade.
-- Carga em banco relacional.
-- Consultas SQL analiticas.
-- Dashboard em Power BI, Tableau, Looker Studio ou Streamlit.
-- Documentacao final com arquitetura do pipeline.
-
-## Divisao Sugerida para o Grupo
-
-1. Integrante 1: entendimento do dataset, dicionario de dados e perfilamento inicial.
-2. Integrante 2: implementacao do ETL no notebook.
-3. Integrante 3: validacoes de qualidade, tratamento de inconsistencias e geracao dos CSVs tratados.
-4. Integrante 4: README, documentacao, analises exploratorias e preparacao da apresentacao.
-
-## Status Atual
-
-- Dataset bruto disponivel em `dataset`.
-- Notebook ETL criado em `notebooks/etl_olist.ipynb`.
-- README documentando proposta, fluxo, regras e proximas etapas.
-- Data Mart ainda nao implementado nesta fase.
+1. **Integrante 1:** Entendimento do dataset, dicionário de dados e perfilamento inicial.
+2. **Integrante 2:** Implementação e manutenção do pipeline ETL no Pandas (notebook `etl_olist.ipynb`).
+3. **Integrante 3:** Configuração do Docker, criação do DDL no PostgreSQL e script de carga (`load_dw.ipynb`).
+4. **Integrante 4:** Documentação (README), testes de qualidade de dados e elaboração das queries SQL (Views) para validação das respostas de negócio.
