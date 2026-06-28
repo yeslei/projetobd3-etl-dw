@@ -54,8 +54,17 @@ function Wait-Postgres {
 }
 
 function Test-DockerReady {
-    docker info *> $null
-    return $LASTEXITCODE -eq 0
+    $PreviousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+
+    try {
+        docker info *> $null
+        return $LASTEXITCODE -eq 0
+    } catch {
+        return $false
+    } finally {
+        $ErrorActionPreference = $PreviousErrorActionPreference
+    }
 }
 
 function Start-DockerDesktop {
@@ -135,6 +144,53 @@ docker compose run --rm -T `
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Falha ao executar os notebooks no container jupyter-etl."
 }
+
+Write-Host ""
+Write-Host "Validando objetos criados no Data Warehouse..." -ForegroundColor Cyan
+
+$ValidationSql = @"
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'public'
+  AND table_name IN (
+    'dim_cliente',
+    'dim_produto',
+    'dim_vendedor',
+    'dim_tempo',
+    'dim_forma_pagamento',
+    'fato_vendas',
+    'fato_pagamentos',
+    'fato_logistica',
+    'fato_satisfacao'
+  )
+ORDER BY table_name;
+"@
+
+$CreatedObjects = docker exec postgres_dw_container psql -U admin -d dw_academico -t -A -c $ValidationSql
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Falha ao validar os objetos do Data Warehouse."
+}
+
+$ExpectedObjects = @(
+    "dim_cliente",
+    "dim_produto",
+    "dim_tempo",
+    "dim_vendedor",
+    "dim_forma_pagamento",
+    "fato_logistica",
+    "fato_pagamentos",
+    "fato_satisfacao",
+    "fato_vendas"
+)
+
+$MissingObjects = $ExpectedObjects | Where-Object { $_ -notin $CreatedObjects }
+
+if ($MissingObjects.Count -gt 0) {
+    Write-Error "Pipeline executou, mas faltam objetos no DW: $($MissingObjects -join ', ')"
+}
+
+Write-Host "Objetos principais encontrados no DW." -ForegroundColor Green
 
 Write-Host ""
 Write-Host "Pipeline concluido com sucesso." -ForegroundColor Green

@@ -215,6 +215,8 @@ projetobd3-etl-dw/
 
    Não é necessário ter Python, Jupyter ou bibliotecas Python instaladas localmente. As dependências são resolvidas dentro do container.
 
+   Ao final, o script valida se as dimensões principais e as quatro tabelas fato esperadas foram criadas no Data Warehouse.
+
    Caso o PowerShell bloqueie a execução do script local, utilize:
    ```powershell
    powershell -ExecutionPolicy Bypass -File .\run_pipeline.ps1
