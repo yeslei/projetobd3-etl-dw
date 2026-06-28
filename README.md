@@ -216,10 +216,17 @@ projetobd3-etl-dw/
    ```bash
    pip install pandas numpy sqlalchemy psycopg2-binary jupyter
    ```
-3. **Execute o pipeline de Transformação (ETL):**
-   Abra e corra todas as células do notebook `notebooks/etl_olist.ipynb` para tratar os dados brutos e gerar os CSVs na pasta `output/`.
-4. **Alimente o Data Warehouse:**
-   Abra e corra o notebook `notebooks/load_dw.ipynb`. Ele executará a criação automática do Schema e realizará o UPSERT dos dados tratados, garantindo a integridade referencial.
+3. **Execute o pipeline completo:**
+   Para rodar todo o fluxo automaticamente, execute o script abaixo na raiz do projeto:
+   ```powershell
+   .\run_pipeline.ps1
+   ```
+   O script executa, em sequência, os notebooks `notebooks/etl_olist.ipynb`, `notebooks/load_dw.ipynb` e `notebooks/create_views_dw.ipynb`, gerando os CSVs tratados, carregando o Data Warehouse e criando as views analíticas.
+
+   Caso o PowerShell bloqueie a execução do script local, utilize:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\run_pipeline.ps1
+   ```
 
 ---
 
