@@ -206,22 +206,14 @@ projetobd3-etl-dw/
 
 ## 5. Como Executar o Projeto
 
-1. **Suba a infraestrutura do Banco de Dados:**
-   No diretório raiz do projeto, execute o Docker Compose para instanciar o PostgreSQL localmente no porto `5433`:
-   ```bash
-   docker compose up -d
-   ```
-2. **Instale as dependências:**
-   Crie um ambiente virtual ou use o Poetry para instalar as bibliotecas necessárias:
-   ```bash
-   pip install pandas numpy sqlalchemy psycopg2-binary jupyter
-   ```
-3. **Execute o pipeline completo:**
-   Para rodar todo o fluxo automaticamente, execute o script abaixo na raiz do projeto:
+1. **Execute o pipeline completo:**
+   Execute o script abaixo na raiz do projeto:
    ```powershell
    .\run_pipeline.ps1
    ```
-   O script executa, em sequência, os notebooks `notebooks/etl_olist.ipynb`, `notebooks/load_dw.ipynb` e `notebooks/create_views_dw.ipynb`, gerando os CSVs tratados, carregando o Data Warehouse e criando as views analíticas.
+   O script verifica se o Docker Desktop está aberto, tenta iniciá-lo se necessário, sobe o PostgreSQL via Docker Compose, aguarda o banco responder na porta `5433` e executa, em sequência, os notebooks `notebooks/etl_olist.ipynb`, `notebooks/load_dw.ipynb` e `notebooks/create_views_dw.ipynb` dentro do container `jupyter-etl`.
+
+   Não é necessário ter Python, Jupyter ou bibliotecas Python instaladas localmente. As dependências são resolvidas dentro do container.
 
    Caso o PowerShell bloqueie a execução do script local, utilize:
    ```powershell
